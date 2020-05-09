@@ -5,7 +5,7 @@ import pickle
 import cv2  # type:ignore
 import numpy as np  # type:ignore
 
-Calibration = typing.Tuple[object, object, object, object, object]  # TODO be more specific
+Calibration = typing.NewType('Calibration', typing.Tuple[object, object, object, object, object])
 
 
 def _calibrate(in_path: str, nx: int, ny: int) -> typing.Tuple[bool, np.array, object]:
@@ -29,7 +29,7 @@ def calibrate(in_paths: typing.List[str], nx: int, ny: int, debug_out: typing.Op
     objpoints = [objp for _ in imgpoints]
 
     shape = cals[0][2]  # shape of all calibration images should be the same, so take the first
-    calibration = _, mtx, dist, _, _ = cv2.calibrateCamera(objpoints, imgpoints, shape, None, None)
+    calibration = Calibration(cv2.calibrateCamera(objpoints, imgpoints, shape, None, None))
 
     if debug_out:
         shutil.rmtree(debug_out)
@@ -39,7 +39,7 @@ def calibrate(in_paths: typing.List[str], nx: int, ny: int, debug_out: typing.Op
             ret, corners, _ = cals[i]
             if ret:
                 cc_img = cv2.drawChessboardCorners(img, (nx, ny), corners, ret)
-                unwarp_img = cv2.undistort(img, mtx, dist, None, mtx)
+                unwarp_img = undistort(img, calibration)
 
                 basename, ext = os.path.splitext(os.path.basename(in_path))
                 cc_path = os.path.join(debug_out, basename + ext)
@@ -77,6 +77,11 @@ def default_calibration_paths() -> typing.List[str]:
 def load_or_calibrate_default(debug: bool = False) -> Calibration:
     return load_or_calibrate(default_calibration_paths(), NX, NY, load_path=LOAD_PATH,
                              debug_out=DEBUG_OUT if debug else None)
+
+
+def undistort(img: np.array, calibration: Calibration) -> np.array:
+    _, mtx, dist, _, _ = calibration
+    return cv2.undistort(img, mtx, dist, None, mtx)
 
 
 if __name__ == '__main__':

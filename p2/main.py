@@ -9,6 +9,7 @@ import typing
 from dataclasses import dataclass
 from p2 import calibrate
 import enum
+import glob
 
 # Based on lesson 8 section 1, our overarching steps:
 # x Camera calibration
@@ -113,34 +114,51 @@ def run_path(in_path: str, params: Params) -> None:
 
 TEST_IMAGES_DIR = './assets/test_images'
 PROJECT_VIDEO_PATH = './assets/project_video.mp4'
+CHALLENGE_VIDEO_PATH = './assets/challenge_video.mp4'
+CHALLENGE2_VIDEO_PATH = './assets/harder_challenge_video.mp4'
 
 
 def test_images_paths() -> typing.List[str]:
     return [os.path.join(TEST_IMAGES_DIR, f) for f in os.listdir(TEST_IMAGES_DIR)]
 
-def step_params(step: Step) -> Params:
-    return Params(
+
+def main() -> None:
+    # accept input files as command-line args
+    args = sys.argv[1:]
+    if not len(args):
+        args = test_images_paths()
+        # args = [PROJECT_VIDEO_PATH]
+        # args = [CHALLENGE_VIDEO_PATH]
+        # args = [CHALLENGE2_VIDEO_PATH]
+
+    # One set of Params for every processing Step we're interested in.
+    #
+    # Processing one Step at a time is wasteful - we reprocess all earlier steps every time, when in theory we could
+    # output all steps after running once. This is easier to implement, is reusable with images/video, and we're usually
+    # only worried about 1-2 steps at a time.
+    step_params = [Params(
         step=step,
         output_suffix='-' + step.name.lower(),
         calibration=calibrate.load_or_calibrate_default(debug=True),
         sobelx_threshold=(20, 100),
         saturation_threshold=(170, 255),
-    )
-
-def main() -> None:
-    args = sys.argv[1:]
-    if not len(args):
-        args = test_images_paths()
-        # args = [PROJECT_VIDEO_PATH]
-
-    steps = [
-        Step.THRESHOLD_RAW,
-        Step.THRESHOLD_COLOR,
+    ) for step in
+        [
+            # Step.THRESHOLD_RAW,
+            Step.THRESHOLD_COLOR,
+            # Step.FULL,
+        ]
     ]
-    # print(args, params)
+
+    # clean up old output
+    for ext in ['jpg', 'mp4']:
+        for path in glob.glob(os.path.join(step_params[0].output_dir, "*." + ext)):
+            os.remove(path)
+
+    # finally, run each file
     for arg in args:
-        for step in steps:
-            run_path(arg, step_params(step))
+        for params in step_params:
+            run_path(arg, params)
 
 
 if __name__ == '__main__':

@@ -1,14 +1,14 @@
 import typing
 import os
-# type:ignore
-import cv2
-# type:ignore
-import numpy as np
 import shutil
 import pickle
+import cv2  # type:ignore
+import numpy as np  # type:ignore
+
+Calibration = typing.Tuple[object, object, object, object, object]  # TODO be more specific
 
 
-def _calibrate(in_path: str, nx: int, ny: int):
+def _calibrate(in_path: str, nx: int, ny: int) -> typing.Tuple[bool, np.array, object]:
     # Borrowed lots of code here from udacity section 6-11, "calibrating your camera":
     # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/78afdfc4-f0fa-4505-b890-5d8e6319e15c/concepts/a30f45cb-c1c0-482c-8e78-a26604841ec0
     img = cv2.imread(in_path)
@@ -17,8 +17,8 @@ def _calibrate(in_path: str, nx: int, ny: int):
     return ret, corners, gray.shape
 
 
-def calibrate(in_paths: typing.List[str], nx: int, ny: int, debug_out: typing.Optional[str] = None):
-    cals: typing.List[bool, np.array, "img.shape"] = [_calibrate(in_path, nx, ny) for in_path in in_paths]
+def calibrate(in_paths: typing.List[str], nx: int, ny: int, debug_out: typing.Optional[str] = None) -> Calibration:
+    cals: typing.List[typing.Tuple[bool, np.array, object]] = [_calibrate(in_path, nx, ny) for in_path in in_paths]
     imgpoints = [c for (ret, c, shape) in cals if ret]
 
     # Udacity's code... how on earth do you read this numpy stuff?
@@ -50,7 +50,7 @@ def calibrate(in_paths: typing.List[str], nx: int, ny: int, debug_out: typing.Op
     return calibration
 
 
-def load_or_calibrate(*args, **kwargs):
+def load_or_calibrate(*args, **kwargs) -> Calibration:
     """Store/load calibration data as a pickle file for faster reruns."""
     load_path = kwargs.pop('load_path')
     try:
@@ -63,16 +63,20 @@ def load_or_calibrate(*args, **kwargs):
         return c
 
 
-CALIBRATION_DIR = 'assets/camera_cal'
-CALIBRATION_PATHS = [os.path.join(CALIBRATION_DIR, f) for f in os.listdir(CALIBRATION_DIR)]
+DEFAULT_CALIBRATION_DIR = 'assets/camera_cal'
 NX = 9
 NY = 6
 LOAD_PATH = 'output_images/calibration.pickle'
 DEBUG_OUT = 'output_images/cal'
 
 
-def load_or_calibrate_default(debug: bool = False):
-    load_or_calibrate(CALIBRATION_PATHS, NX, NY, load_path=LOAD_PATH, debug_out=DEBUG_OUT if debug else None)
+def default_calibration_paths() -> typing.List[str]:
+    return [os.path.join(DEFAULT_CALIBRATION_DIR, f) for f in os.listdir(DEFAULT_CALIBRATION_DIR)]
+
+
+def load_or_calibrate_default(debug: bool = False) -> Calibration:
+    return load_or_calibrate(default_calibration_paths(), NX, NY, load_path=LOAD_PATH,
+                             debug_out=DEBUG_OUT if debug else None)
 
 
 if __name__ == '__main__':

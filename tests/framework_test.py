@@ -1,4 +1,4 @@
-from src import main
+import p2
 
 
 def test_pass():

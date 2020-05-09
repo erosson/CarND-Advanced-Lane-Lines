@@ -1,0 +1,3 @@
+#!/bin/sh -eu
+mypy src/main.py
+python src/main.py

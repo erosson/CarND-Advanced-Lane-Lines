@@ -16,7 +16,7 @@ import glob
 # x Distortion correction
 # x Color/gradient threshold
 # x Perspective transform
-# * Detect lane lines
+# * Detect lane lines: histogram
 # * Determine the lane curvature
 
 # Color/gradient threshold. Based on section 7-12:
@@ -38,6 +38,9 @@ class Step(enum.Enum):
     PERSPECTIVE_POST = enum.auto()
     PERSPECTIVE_THRESHOLD_PRE = enum.auto()
     PERSPECTIVE_THRESHOLD_POST = enum.auto()
+    # lane-detection histogram
+    HISTOGRAM_PLOT = enum.auto()
+    HISTOGRAM_WINDOWS = enum.auto()
     # after all operations; don't quit early
     FULL = enum.auto()
 
@@ -53,6 +56,8 @@ class Params:
     # percent of image dimensions: (y, (closest-x, farthest-x))
     perspective_src_pcts: typing.Tuple[float, typing.Tuple[float, float, float, float]]
     perspective_dest_pct: float
+    num_sliding_windows: int
+    sliding_windows_margin: int
 
     step: Step = Step.FULL
     output_dir: str = './output_images'
@@ -116,11 +121,22 @@ def threshold_color(sobelx: np.ndarray, saturation: np.ndarray) -> np.ndarray:
     return np.dstack((np.zeros_like(sobelx), sobelx, saturation)) * 255
 
 
+def sliding_window_pts(line_x: int, img_y: int, window_num: int, params: Params) -> typing.List[Pt]:
+    window_height = img_y // params.num_sliding_windows
+    return [
+        (line_x - params.sliding_windows_margin, img_y - window_num * window_height),
+        (line_x + params.sliding_windows_margin, img_y - window_num * window_height),
+        (line_x + params.sliding_windows_margin, img_y - (1 + window_num) * window_height),
+        (line_x - params.sliding_windows_margin, img_y - (1 + window_num) * window_height),
+    ]
+
+
 def run_image(img: np.ndarray, params: Params) -> np.ndarray:
     if params.step is Step.ORIGINAL: return img
     img = calibrate.undistort(img, params.calibration)
     if params.step is Step.UNDISTORT: return img
 
+    # saturation/sobel thresholding
     sobelx = sobelx_threshold(img, params.sobelx_threshold)
     saturation = saturation_threshold(img, params.saturation_threshold)
     # Combined thresholds
@@ -130,13 +146,13 @@ def run_image(img: np.ndarray, params: Params) -> np.ndarray:
     if params.step is Step.THRESHOLD_COLOR:
         return threshold_color(sobelx=sobelx, saturation=saturation)
 
+    # perspective transform
     transform = perspective_transform(img, params)
     if params.step is Step.PERSPECTIVE_PRE or params.step is Step.PERSPECTIVE_THRESHOLD_PRE:
         if params.step is Step.PERSPECTIVE_THRESHOLD_PRE:
             img = threshold_color(sobelx=sobelx, saturation=saturation)
         cv2.polylines(img, [np.array(transform.srcs, np.int32)], isClosed=True, color=(255, 0, 0), thickness=3)
         return img
-
     warp_size = (img.shape[1], img.shape[0])
     warped = cv2.warpPerspective(thresholds, transform.matrix, warp_size, flags=cv2.INTER_LINEAR)
     if params.step is Step.PERSPECTIVE_POST or params.step is Step.PERSPECTIVE_THRESHOLD_POST:
@@ -146,8 +162,36 @@ def run_image(img: np.ndarray, params: Params) -> np.ndarray:
         cv2.polylines(img, [np.array(transform.dests, np.int32)], isClosed=True, color=(255, 0, 0), thickness=3)
         return img
 
-    # TODO
-    if params.step is Step.FULL: return img
+    # lane line detection by histogram of the bottom half of the screen: section 8-3
+    # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/626f183c-593e-41d7-a828-eda3c6122573/concepts/011b8b18-331f-4f43-8a04-bf55787b347f
+    histogram = np.sum(warped[warped.shape[0] // 2:, :], axis=0)
+    midpoint = len(histogram) // 2
+    leftline = max(enumerate(histogram[:midpoint]), key=lambda v: v[1])[0]
+    rightline = max(enumerate(histogram[midpoint:]), key=lambda v: v[1])[0] + midpoint
+    # print(len(histogram), leftline, rightline)
+    if params.step is Step.HISTOGRAM_PLOT:
+        # histogram to image. thanks, https://stackoverflow.com/a/7821917
+        # TODO: it'd be cool to overlay the perspective image with this
+        fig = plt.figure()
+        plt.plot(histogram, figure=fig)
+        fig.canvas.draw()
+        img = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        return img
+    if params.step is Step.HISTOGRAM_WINDOWS:
+        img = threshold_color(sobelx=sobelx, saturation=saturation)
+        img = cv2.warpPerspective(img, transform.matrix, warp_size, flags=cv2.INTER_LINEAR)
+        overlay = np.copy(img)
+        leftpts = [np.array(sliding_window_pts(leftline, img.shape[0], 0, params), np.int32)]
+        rightpts = [np.array(sliding_window_pts(rightline, img.shape[0], 0, params), np.int32)]
+        cv2.fillPoly(overlay, leftpts, color=(255, 255, 0))
+        cv2.fillPoly(overlay, rightpts, color=(255, 255, 0))
+        img = cv2.addWeighted(overlay, 0.3, img, 0.7, 0)
+        cv2.polylines(img, leftpts, isClosed=True, color=(255, 255, 0, 255), thickness=1)
+        cv2.polylines(img, rightpts, isClosed=True, color=(255, 255, 0, 255), thickness=1)
+        return img
+    if params.step is Step.FULL:
+        return img
     raise Exception('no such step', params.step)
 
 
@@ -209,6 +253,8 @@ def main() -> None:
         # https://video.udacity-data.com/topher/2016/December/58448557_warped-straight-lines/warped-straight-lines.jpg
         perspective_src_pcts=(445 / 720, (200 / 1280, 600 / 1280, 680 / 1280, 1120 / 1280)),
         perspective_dest_pct=300 / 1280,
+        num_sliding_windows=9,
+        sliding_windows_margin=100,
     ) for step in
         # list(Step)
         [
@@ -218,8 +264,10 @@ def main() -> None:
             # Step.THRESHOLD_COLOR,
             # Step.PERSPECTIVE_PRE,
             # Step.PERSPECTIVE_POST,
-            Step.PERSPECTIVE_THRESHOLD_PRE,
-            Step.PERSPECTIVE_THRESHOLD_POST,
+            # Step.PERSPECTIVE_THRESHOLD_PRE,
+            # Step.PERSPECTIVE_THRESHOLD_POST,
+            # Step.HISTOGRAM_PLOT,
+            Step.HISTOGRAM_WINDOWS,
             # Step.FULL,
         ]
     ]

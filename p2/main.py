@@ -17,8 +17,8 @@ import glob
 # x Apply a perspective transform to rectify binary image ("birds-eye view").
 # x Detect lane pixels and fit to find the lane boundary.
 #   * section 8-5: search from prior state to skip sliding window, when possible, for faster processing. https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/626f183c-593e-41d7-a828-eda3c6122573/concepts/474a329a-78d0-4a33-833a-34d02a35fc13
-# * Determine the curvature of the lane and vehicle position with respect to center.
-#   * vehicle position: lane midpoint. https://knowledge.udacity.com/questions/30469
+# x Determine the curvature of the lane and vehicle position with respect to center.
+#   x vehicle position: lane midpoint. https://knowledge.udacity.com/questions/30469
 # x Warp the detected lane boundaries back onto the original image.
 # x Output visual display of the lane boundaries
 #   x ...and numerical estimation of lane curvature and vehicle position.
@@ -101,26 +101,26 @@ class PerspectiveTransform:
     inverse_matrix: np.ndarray
 
 
-def perspective_transform(img: np.ndarray, params: Params) -> PerspectiveTransform:
+def perspective_transform(shape: typing.Sequence[int], params: Params) -> PerspectiveTransform:
     # Section 8-2: "you can assume the road is a flat plane. This isn't strictly true, but it can serve as an approximation for this project."
     # Points are constants, from params!
     # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/626f183c-593e-41d7-a828-eda3c6122573/concepts/e6e02d4d-7c80-4bed-a79f-869ef496831b
     (src_y_pct, src_x_pcts) = params.perspective_src_pcts
-    (y_shape, x_shape, a_shape) = img.shape
-    srcs = [
+    y_shape, x_shape = shape[:2]
+    srcs_ = [
         (x_shape * src_x_pcts[0], y_shape - 1),
         (x_shape * src_x_pcts[1], y_shape * src_y_pct),
         (x_shape * src_x_pcts[2], y_shape * src_y_pct),
         (x_shape * src_x_pcts[3], y_shape - 1),
     ]
-    srcs = np.array([(x, y) for x, y in srcs], np.float32)
-    dests = [
+    srcs = np.array([(x, y) for x, y in srcs_], np.float32)
+    dests_ = [
         (x_shape * params.perspective_dest_pct, y_shape - 1),
         (x_shape * params.perspective_dest_pct, 0),
         (x_shape * (1 - params.perspective_dest_pct), 0),
         (x_shape * (1 - params.perspective_dest_pct), y_shape - 1),
     ]
-    dests = np.array([(x, y) for x, y in dests], np.float32)
+    dests = np.array([(x, y) for x, y in dests_], np.float32)
     matrix = cv2.getPerspectiveTransform(srcs, dests)
     inverse_matrix = cv2.getPerspectiveTransform(dests, srcs)
     return PerspectiveTransform(srcs=srcs, dests=dests, matrix=matrix, inverse_matrix=inverse_matrix)
@@ -210,8 +210,27 @@ def lane_radius_meters(ploty: np.array, polys: typing.Tuple[np.array, np.array],
     curverads = [
         ((1 + (2 * poly[0] * y_eval * ym_per_pix + poly[1]) ** 2) ** 1.5) / np.absolute(2 * poly[0])
         for poly in polys]
-    print(polys[0], y_eval, ym_per_pix, curverads[0])
     return sum(curverads) / len(curverads)
+
+
+def lane_offset_width_meters(shape: typing.Sequence[int],
+                             poly_evals: typing.Tuple[typing.List[float], typing.List[float]],
+                             xm_per_pix: float) -> typing.Tuple[float, float]:
+    """Calculate center-offset of the lane, given polynomial curves for both lane lines.
+
+    The vehicle is left of lane-center for values less than 0, and right of lane-center for values greater than 0.
+    """
+    y_shape, x_shape = shape[:2]
+    y_eval = y_shape - 1
+    left_eval, right_eval = poly_evals
+
+    vehicle_center = x_shape // 2
+    lane_center = sum(poly[y_eval] for poly in poly_evals) / len(poly_evals)
+    offset_pix = vehicle_center - lane_center
+    offset_m = offset_pix * xm_per_pix
+
+    lane_width_m = abs(left_eval[y_eval] - right_eval[y_eval]) * xm_per_pix
+    return (offset_m, lane_width_m)
 
 
 def run_image(original: np.ndarray, params: Params) -> np.ndarray:
@@ -230,7 +249,7 @@ def run_image(original: np.ndarray, params: Params) -> np.ndarray:
     thresholds[(saturation == 1) | (sobelx == 1)] = 1
 
     # perspective transform
-    transform = perspective_transform(undistort, params)
+    transform = perspective_transform(undistort.shape, params)
     warp_size = (undistort.shape[1], undistort.shape[0])
     warped = cv2.warpPerspective(thresholds, transform.matrix, warp_size, flags=cv2.INTER_LINEAR)
 
@@ -250,7 +269,8 @@ def run_image(original: np.ndarray, params: Params) -> np.ndarray:
     # lane position and radius
     xcenter0 = int((left_fitx[0] + right_fitx[0]) / 2)
     # offset = xcenter0 - img.shape[1] // 2
-    offset = 0
+    offset, lane_width = lane_offset_width_meters(shape=warped.shape, poly_evals=(left_fitx, right_fitx),
+                                                  xm_per_pix=params.xm_per_pix)
     radius = lane_radius_meters(ploty=ploty, polys=sw.polys, ym_per_pix=params.ym_per_pix)
 
     ### Views ###
@@ -338,18 +358,21 @@ def run_image(original: np.ndarray, params: Params) -> np.ndarray:
         overlay = cv2.warpPerspective(overlay, transform.inverse_matrix, warp_size, flags=cv2.INTER_LINEAR)
         view = cv2.addWeighted(overlay, 1, view, 1, 0)
         # green dot in center-bottom of lane
-        view[view.shape[0] - 6:view.shape[0] - 1,
-        int(view.shape[1] // 2) - 2:int(view.shape[1] // 2) + 2] = (0, 255, 0)
+        # view[view.shape[0] - 6:view.shape[0] - 1, int(view.shape[1] // 2) - 2:int(view.shape[1] // 2) + 2] = (0, 255, 0)
 
-        text = f"""\
-        radius of curvature: {radius: .2f}m
-        vehicle offset: {abs(offset): .2f}m {
+        radius_text = f"radius of curvature: {radius: .2f}m"
+        offset_text = f"""vehicle offset: {abs(offset): .2f}m {
         "(centered)" if offset == 0 else
-        "right" if offset < 0 else
-        "left"
-        }"""
-        for i, t in enumerate(text.splitlines()):
-            view = cv2.putText(view, t, (50, 50 + 14 * i), cv2.FONT_HERSHEY_PLAIN, 1, (255, 255, 255))
+        "left of lane center" if offset < 0 else
+        "right of lane center"
+        }{" - DANGER" if abs(offset) > 0.5 else ""}"""
+        width_text = f"lane width: {lane_width: .2f}m"
+        view = cv2.putText(view, radius_text, (50, 50 + 14 * 0),
+                           fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=1, color=(255, 255, 255))
+        view = cv2.putText(view, offset_text, (50, 50 + 14 * 1),
+                           fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=1, color=(255, 255, 255))
+        view = cv2.putText(view, width_text, (50, 50 + 14 * 2),
+                           fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=1, color=(255, 255, 255))
         return view
     raise Exception('no such view', params.view)
 
@@ -393,10 +416,11 @@ def main() -> None:
     # accept input files as command-line args
     args = sys.argv[1:]
     if not len(args):
-        args = test_images_paths()
-        # args = [PROJECT_VIDEO_PATH]
-        # args = [CHALLENGE_VIDEO_PATH]
-        # args = [CHALLENGE2_VIDEO_PATH]
+        args = []
+        args += test_images_paths()
+        args += [PROJECT_VIDEO_PATH]
+        # args += [CHALLENGE_VIDEO_PATH]
+        # args += [CHALLENGE2_VIDEO_PATH]
 
     # One set of Params for every processing Step we're interested in.
     #

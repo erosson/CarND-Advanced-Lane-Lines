@@ -11,13 +11,17 @@ from p2 import calibrate
 import enum
 import glob
 
-# Based on lesson 8 section 1, our overarching steps:
-# x Camera calibration
-# x Distortion correction
-# x Color/gradient threshold
-# x Perspective transform
-# * Detect lane lines: histogram
-# * Determine the lane curvature
+# x Compute the camera calibration matrix and distortion coefficients given a set of chessboard images.
+# x Apply a distortion correction to raw images.
+# x Use color transforms, gradients, etc., to create a thresholded binary image.
+# x Apply a perspective transform to rectify binary image ("birds-eye view").
+# x Detect lane pixels and fit to find the lane boundary.
+#   * section 8-5: search from prior state to skip sliding window, when possible, for faster processing. https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/626f183c-593e-41d7-a828-eda3c6122573/concepts/474a329a-78d0-4a33-833a-34d02a35fc13
+# * Determine the curvature of the lane and vehicle position with respect to center.
+#   * vehicle position: lane midpoint. https://knowledge.udacity.com/questions/30469
+# x Warp the detected lane boundaries back onto the original image.
+# x Output visual display of the lane boundaries
+#   * ...and numerical estimation of lane curvature and vehicle position.
 
 # Color/gradient threshold. Based on section 7-12:
 # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/144d538f-335d-454d-beb2-b1736ec204cb/concepts/a1b70df9-638b-46bb-8af0-12c43dcfd0b4
@@ -92,6 +96,7 @@ class PerspectiveTransform:
     srcs: typing.List[typing.Tuple[float, float]]
     dests: typing.List[typing.Tuple[float, float]]
     matrix: np.ndarray
+    inverse_matrix: np.ndarray
 
 
 def perspective_transform(img: np.ndarray, params: Params) -> PerspectiveTransform:
@@ -115,7 +120,8 @@ def perspective_transform(img: np.ndarray, params: Params) -> PerspectiveTransfo
     ]
     dests = np.array([(x, y) for x, y in dests], np.float32)
     matrix = cv2.getPerspectiveTransform(srcs, dests)
-    return PerspectiveTransform(srcs=srcs, dests=dests, matrix=matrix)
+    inverse_matrix = cv2.getPerspectiveTransform(dests, srcs)
+    return PerspectiveTransform(srcs=srcs, dests=dests, matrix=matrix, inverse_matrix=inverse_matrix)
 
 
 def threshold_color(sobelx: np.ndarray, saturation: np.ndarray) -> np.ndarray:
@@ -224,6 +230,16 @@ def run_image(img: np.ndarray, params: Params) -> np.ndarray:
         return img
 
     sw = sliding_windows(warped, params)
+    ploty = np.linspace(0, warped.shape[0] - 1, warped.shape[0])
+    try:
+        lpoly, rpoly = sw.polys
+        left_fitx = lpoly[0] * ploty ** 2 + lpoly[1] * ploty + lpoly[2]
+        right_fitx = rpoly[0] * ploty ** 2 + rpoly[1] * ploty + rpoly[2]
+    except TypeError:
+        # Avoids an error if `left` and `right_fit` are still none or incorrect
+        # print('The function failed to fit a line!')
+        left_fitx = 1 * ploty ** 2 + 1 * ploty
+        right_fitx = 1 * ploty ** 2 + 1 * ploty
     if params.step is Step.HISTOGRAM_PLOT:
         # histogram to image. thanks, https://stackoverflow.com/a/7821917
         # TODO: it'd be cool to overlay the perspective image with this
@@ -250,16 +266,6 @@ def run_image(img: np.ndarray, params: Params) -> np.ndarray:
             cv2.polylines(img, pts, isClosed=True, color=(0, 255, 0, 0), thickness=3)
 
         # yellow polynomial lines
-        ploty = np.linspace(0, warped.shape[0] - 1, warped.shape[0])
-        try:
-            lpoly, rpoly = sw.polys
-            left_fitx = lpoly[0] * ploty ** 2 + lpoly[1] * ploty + lpoly[2]
-            right_fitx = rpoly[0] * ploty ** 2 + rpoly[1] * ploty + rpoly[2]
-        except TypeError:
-            # Avoids an error if `left` and `right_fit` are still none or incorrect
-            # print('The function failed to fit a line!')
-            left_fitx = 1 * ploty ** 2 + 1 * ploty
-            right_fitx = 1 * ploty ** 2 + 1 * ploty
         # draw over the existing image. Thanks, https://stackoverflow.com/a/34459284 and https://stackoverflow.com/a/9295367
         fig = plt.figure()
         ax = plt.Axes(fig, [0, 0, 1, 1])
@@ -273,6 +279,23 @@ def run_image(img: np.ndarray, params: Params) -> np.ndarray:
         img = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
         img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
         return img
+
+    # Red/blue lane lines
+    lanes_overlay = np.copy(img)
+    lanes_overlay.fill(0)
+    lanes_overlay[sw.lnonzeros] = (255, 0, 0)
+    lanes_overlay[sw.rnonzeros] = (0, 0, 255)
+    # Green rectangle between the two lane lines
+    # There's probably a fancier loop-free way to do this, but hell if I can figure it out
+    center_overlay = np.copy(img)
+    center_overlay.fill(0)
+    for y in ploty:
+        y = int(y)
+        center_overlay[y, int(left_fitx[y]):int(right_fitx[y])] = (0, 255, 0)
+    # Combine the overlays with the original
+    overlay = cv2.addWeighted(center_overlay, 0.2, lanes_overlay, 1, 0)
+    overlay = cv2.warpPerspective(overlay, transform.inverse_matrix, warp_size, flags=cv2.INTER_LINEAR)
+    img = cv2.addWeighted(overlay, 1, img, 1, 0)
     if params.step is Step.FULL:
         return img
     raise Exception('no such step', params.step)
@@ -333,8 +356,6 @@ def main() -> None:
         calibration=calibrate.load_or_calibrate_default(debug=True),
         sobelx_threshold=(20, 100),
         saturation_threshold=(170, 255),
-        # estimates from this image:
-        # https://video.udacity-data.com/topher/2016/December/58448557_warped-straight-lines/warped-straight-lines.jpg
         perspective_src_pcts=(445 / 720, (200 / 1280, 600 / 1280, 680 / 1280, 1120 / 1280)),
         perspective_dest_pct=300 / 1280,
         num_sliding_windows=9,
@@ -353,8 +374,8 @@ def main() -> None:
             # Step.PERSPECTIVE_THRESHOLD_PRE,
             # Step.PERSPECTIVE_THRESHOLD_POST,
             # Step.HISTOGRAM_PLOT,
-            Step.HISTOGRAM_WINDOWS,
-            # Step.FULL,
+            # Step.HISTOGRAM_WINDOWS,
+            Step.FULL,
         ]
     ]
 

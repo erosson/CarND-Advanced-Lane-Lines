@@ -198,37 +198,22 @@ def sliding_window_pts(line_xs: typing.List[int], img_y: int, params: Params) ->
     return [[np.array(_sliding_window_pts(line_x, img_y, i, params), np.int32)] for i, line_x in enumerate(line_xs)]
 
 
-def run_image(img: np.ndarray, params: Params) -> np.ndarray:
-    if params.step is Step.ORIGINAL: return img
-    img = calibrate.undistort(img, params.calibration)
-    if params.step is Step.UNDISTORT: return img
+def run_image(original: np.ndarray, params: Params) -> np.ndarray:
+    undistort = calibrate.undistort(original, params.calibration)
 
     # saturation/sobel thresholding
-    sobelx = sobelx_threshold(img, params.sobelx_threshold)
-    saturation = saturation_threshold(img, params.saturation_threshold)
+    sobelx = sobelx_threshold(undistort, params.sobelx_threshold)
+    saturation = saturation_threshold(undistort, params.saturation_threshold)
     # Combined thresholds
     thresholds = np.zeros_like(sobelx)
     thresholds[(saturation == 1) | (sobelx == 1)] = 1
-    if params.step is Step.THRESHOLD_RAW: return thresholds
-    if params.step is Step.THRESHOLD_COLOR:
-        return threshold_color(sobelx=sobelx, saturation=saturation)
 
     # perspective transform
-    transform = perspective_transform(img, params)
-    if params.step is Step.PERSPECTIVE_PRE or params.step is Step.PERSPECTIVE_THRESHOLD_PRE:
-        if params.step is Step.PERSPECTIVE_THRESHOLD_PRE:
-            img = threshold_color(sobelx=sobelx, saturation=saturation)
-        cv2.polylines(img, [np.array(transform.srcs, np.int32)], isClosed=True, color=(255, 0, 0), thickness=3)
-        return img
-    warp_size = (img.shape[1], img.shape[0])
+    transform = perspective_transform(undistort, params)
+    warp_size = (undistort.shape[1], undistort.shape[0])
     warped = cv2.warpPerspective(thresholds, transform.matrix, warp_size, flags=cv2.INTER_LINEAR)
-    if params.step is Step.PERSPECTIVE_POST or params.step is Step.PERSPECTIVE_THRESHOLD_POST:
-        if params.step is Step.PERSPECTIVE_THRESHOLD_POST:
-            img = threshold_color(sobelx=sobelx, saturation=saturation)
-        img = cv2.warpPerspective(img, transform.matrix, warp_size, flags=cv2.INTER_LINEAR)
-        cv2.polylines(img, [np.array(transform.dests, np.int32)], isClosed=True, color=(255, 0, 0), thickness=3)
-        return img
 
+    # sliding windows; fit the lane to a polynomial
     sw = sliding_windows(warped, params)
     ploty = np.linspace(0, warped.shape[0] - 1, warped.shape[0])
     try:
@@ -240,87 +225,110 @@ def run_image(img: np.ndarray, params: Params) -> np.ndarray:
         # print('The function failed to fit a line!')
         left_fitx = 1 * ploty ** 2 + 1 * ploty
         right_fitx = 1 * ploty ** 2 + 1 * ploty
+
+    # lane position and radius
+    xcenter0 = int((left_fitx[0] + right_fitx[0]) / 2)
+    # offset = xcenter0 - img.shape[1] // 2
+    offset = 0
+    radius = 0
+
+    if params.step is Step.ORIGINAL: return original
+    if params.step is Step.UNDISTORT: return undistort
+    if params.step is Step.THRESHOLD_RAW: return thresholds
+    if params.step is Step.THRESHOLD_COLOR:
+        return threshold_color(sobelx=sobelx, saturation=saturation)
+    if params.step is Step.PERSPECTIVE_PRE or params.step is Step.PERSPECTIVE_THRESHOLD_PRE:
+        view = threshold_color(sobelx=sobelx, saturation=saturation) \
+            if params.step is Step.PERSPECTIVE_THRESHOLD_PRE else undistort
+        cv2.polylines(view, [np.array(transform.srcs, np.int32)], isClosed=True, color=(255, 0, 0), thickness=3)
+        return view
+    if params.step is Step.PERSPECTIVE_POST or params.step is Step.PERSPECTIVE_THRESHOLD_POST:
+        view = threshold_color(sobelx=sobelx, saturation=saturation) \
+            if params.step is Step.PERSPECTIVE_THRESHOLD_POST else undistort
+        view = cv2.warpPerspective(view, transform.matrix, warp_size, flags=cv2.INTER_LINEAR)
+        cv2.polylines(view, [np.array(transform.dests, np.int32)], isClosed=True, color=(255, 0, 0), thickness=3)
+        return view
+
     if params.step is Step.HISTOGRAM_PLOT:
         # histogram to image. thanks, https://stackoverflow.com/a/7821917
         # TODO: it'd be cool to overlay the perspective image with this
         fig = plt.figure()
         plt.plot(sw.histogram, figure=fig)
         fig.canvas.draw()
-        img = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-        return img
+        view = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+        view = view.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        return view
+
     if params.step is Step.HISTOGRAM_WINDOWS:
         # red/blue lane pixels
-        img = np.dstack((warped, warped, warped)) * 255
-        img[sw.lnonzeros] = (255, 0, 0)
-        img[sw.rnonzeros] = (0, 0, 255)
+        view = np.dstack((warped, warped, warped)) * 255
+        view[sw.lnonzeros] = (255, 0, 0)
+        view[sw.rnonzeros] = (0, 0, 255)
 
         # green window boxes
-        leftpts = sliding_window_pts(sw.lefts, img.shape[0], params)
-        rightpts = sliding_window_pts(sw.rights, img.shape[0], params)
+        leftpts = sliding_window_pts(sw.lefts, view.shape[0], params)
+        rightpts = sliding_window_pts(sw.rights, view.shape[0], params)
         for pts in leftpts + rightpts:
             # overlay = np.copy(img)
             # cv2.fillPoly(overlay, leftpts, color=(255, 255, 0))
             # cv2.fillPoly(overlay, rightpts, color=(255, 255, 0))
             # img = cv2.addWeighted(overlay, 0.3, img, 0.7, 0)
-            cv2.polylines(img, pts, isClosed=True, color=(0, 255, 0, 0), thickness=3)
+            cv2.polylines(view, pts, isClosed=True, color=(0, 255, 0, 0), thickness=3)
 
         # yellow polynomial lines
-        # draw over the existing image. Thanks, https://stackoverflow.com/a/34459284 and https://stackoverflow.com/a/9295367
+        # draw over the existing image. What a pain. Thanks, https://stackoverflow.com/a/34459284 and https://stackoverflow.com/a/9295367
         fig = plt.figure()
         ax = plt.Axes(fig, [0, 0, 1, 1])
         ax.set_axis_off()
         fig.add_axes(ax)
         plt.set_cmap('hot')
-        ax.imshow(img)
+        ax.imshow(view)
         plt.plot(left_fitx, ploty, figure=fig, color='yellow')
         plt.plot(right_fitx, ploty, figure=fig, color='yellow')
         fig.canvas.draw()
-        img = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-        return img
+        view = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+        view = view.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        return view
 
-    # Red/blue lane lines
-    lanes_overlay = np.copy(img)
-    lanes_overlay.fill(0)
-    lanes_overlay[sw.lnonzeros] = (255, 0, 0)
-    lanes_overlay[sw.rnonzeros] = (0, 0, 255)
-    # Green rectangle between the two lane lines
-    # There's probably a fancier loop-free way to do this, but hell if I can figure it out
-    center_overlay = np.copy(img)
-    center_overlay.fill(0)
-    position_overlay = np.copy(img)
-    position_overlay.fill(0)
-    for y in ploty:
-        y = int(y)
-        center_overlay[y, int(left_fitx[y]):int(right_fitx[y])] = (0, 255, 0)
-        xcenter = int((left_fitx[y] + right_fitx[y]) / 2)
-        if int((y / 10) % 2) == 0:
-            position_overlay[y, xcenter - 2:xcenter + 2] = (0, 255, 0)
-    # Combine the overlays with the original
-    overlay = lanes_overlay
-    overlay = cv2.addWeighted(center_overlay, 0.2, overlay, 1, 0)
-    overlay = cv2.addWeighted(position_overlay, 0.7, overlay, 1, 0)
-    overlay = cv2.warpPerspective(overlay, transform.inverse_matrix, warp_size, flags=cv2.INTER_LINEAR)
-    img = cv2.addWeighted(overlay, 1, img, 1, 0)
-    # green dot in center-bottom of lane
-    img[img.shape[0] - 6:img.shape[0] - 1, int(img.shape[1] // 2) - 2:int(img.shape[1] // 2) + 2] = (0, 255, 0)
-
-    xcenter0 = int((left_fitx[0] + right_fitx[0]) / 2)
-    # offset = xcenter0 - img.shape[1] // 2
-    offset = 0
-    radius = 0
-    text = f"""\
-radius of curvature: {radius}m
-vehicle offset: {abs(offset): .2f}m {
-    "(centered)" if offset == 0 else
-    "right" if offset < 0 else
-    "left"
-    }"""
-    for i, t in enumerate(text.splitlines()):
-        img = cv2.putText(img, t, (50, 50 + 14 * i), cv2.FONT_HERSHEY_PLAIN, 1, (255, 255, 255))
     if params.step is Step.FULL:
-        return img
+        view = undistort
+        # Red/blue lane lines
+        lanes_overlay = np.copy(view)
+        lanes_overlay.fill(0)
+        lanes_overlay[sw.lnonzeros] = (255, 0, 0)
+        lanes_overlay[sw.rnonzeros] = (0, 0, 255)
+        # Green rectangle between the two lane lines
+        # There's probably a fancier loop-free way to do this, but hell if I can figure it out
+        center_overlay = np.copy(view)
+        center_overlay.fill(0)
+        position_overlay = np.copy(view)
+        position_overlay.fill(0)
+        for y in ploty:
+            y = int(y)
+            center_overlay[y, int(left_fitx[y]):int(right_fitx[y])] = (0, 255, 0)
+            xcenter = int((left_fitx[y] + right_fitx[y]) / 2)
+            if int((y / 10) % 2) == 0:
+                position_overlay[y, xcenter - 2:xcenter + 2] = (0, 255, 0)
+        # Combine the overlays with the original
+        overlay = lanes_overlay
+        overlay = cv2.addWeighted(center_overlay, 0.2, overlay, 1, 0)
+        overlay = cv2.addWeighted(position_overlay, 0.7, overlay, 1, 0)
+        overlay = cv2.warpPerspective(overlay, transform.inverse_matrix, warp_size, flags=cv2.INTER_LINEAR)
+        view = cv2.addWeighted(overlay, 1, view, 1, 0)
+        # green dot in center-bottom of lane
+        view[view.shape[0] - 6:view.shape[0] - 1,
+        int(view.shape[1] // 2) - 2:int(view.shape[1] // 2) + 2] = (0, 255, 0)
+
+        text = f"""\
+        radius of curvature: {radius}m
+        vehicle offset: {abs(offset): .2f}m {
+        "(centered)" if offset == 0 else
+        "right" if offset < 0 else
+        "left"
+        }"""
+        for i, t in enumerate(text.splitlines()):
+            view = cv2.putText(view, t, (50, 50 + 14 * i), cv2.FONT_HERSHEY_PLAIN, 1, (255, 255, 255))
+        return view
     raise Exception('no such step', params.step)
 
 
@@ -388,16 +396,16 @@ def main() -> None:
     ) for step in
         # list(Step)
         [
-            # Step.ORIGINAL,
-            # Step.UNDISTORT,
-            # Step.THRESHOLD_RAW,
-            # Step.THRESHOLD_COLOR,
-            # Step.PERSPECTIVE_PRE,
-            # Step.PERSPECTIVE_POST,
-            # Step.PERSPECTIVE_THRESHOLD_PRE,
-            # Step.PERSPECTIVE_THRESHOLD_POST,
-            # Step.HISTOGRAM_PLOT,
-            # Step.HISTOGRAM_WINDOWS,
+            Step.ORIGINAL,
+            Step.UNDISTORT,
+            Step.THRESHOLD_RAW,
+            Step.THRESHOLD_COLOR,
+            Step.PERSPECTIVE_PRE,
+            Step.PERSPECTIVE_POST,
+            Step.PERSPECTIVE_THRESHOLD_PRE,
+            Step.PERSPECTIVE_THRESHOLD_POST,
+            Step.HISTOGRAM_PLOT,
+            Step.HISTOGRAM_WINDOWS,
             Step.FULL,
         ]
     ]

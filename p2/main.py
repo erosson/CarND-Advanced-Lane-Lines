@@ -29,7 +29,7 @@ import glob
 Threshold = typing.Tuple[int, int]
 
 
-class Step(enum.Enum):
+class View(enum.Enum):
     # identity; return the original image
     ORIGINAL = enum.auto()
     # after camera distortion removed
@@ -64,7 +64,7 @@ class Params:
     sliding_windows_margin: int
     sliding_windows_minpix: int
 
-    step: Step = Step.FULL
+    view: View = View.FULL
     output_dir: str = './output_images'
     output_suffix: str = ''
     subclip: typing.Optional[typing.Tuple[int, int]] = None
@@ -199,6 +199,11 @@ def sliding_window_pts(line_xs: typing.List[int], img_y: int, params: Params) ->
 
 
 def run_image(original: np.ndarray, params: Params) -> np.ndarray:
+    # This is a big function with two main sections: calculations and views.
+    # Calculations prepare data for display; views render it.
+    # TODO: views should really be separate functions, one per view
+
+    ### Calculations ###
     undistort = calibrate.undistort(original, params.calibration)
 
     # saturation/sobel thresholding
@@ -232,24 +237,25 @@ def run_image(original: np.ndarray, params: Params) -> np.ndarray:
     offset = 0
     radius = 0
 
-    if params.step is Step.ORIGINAL: return original
-    if params.step is Step.UNDISTORT: return undistort
-    if params.step is Step.THRESHOLD_RAW: return thresholds
-    if params.step is Step.THRESHOLD_COLOR:
+    ### Views ###
+    if params.view is View.ORIGINAL: return original
+    if params.view is View.UNDISTORT: return undistort
+    if params.view is View.THRESHOLD_RAW: return thresholds
+    if params.view is View.THRESHOLD_COLOR:
         return threshold_color(sobelx=sobelx, saturation=saturation)
-    if params.step is Step.PERSPECTIVE_PRE or params.step is Step.PERSPECTIVE_THRESHOLD_PRE:
+    if params.view is View.PERSPECTIVE_PRE or params.view is View.PERSPECTIVE_THRESHOLD_PRE:
         view = threshold_color(sobelx=sobelx, saturation=saturation) \
-            if params.step is Step.PERSPECTIVE_THRESHOLD_PRE else undistort
+            if params.view is View.PERSPECTIVE_THRESHOLD_PRE else undistort
         cv2.polylines(view, [np.array(transform.srcs, np.int32)], isClosed=True, color=(255, 0, 0), thickness=3)
         return view
-    if params.step is Step.PERSPECTIVE_POST or params.step is Step.PERSPECTIVE_THRESHOLD_POST:
+    if params.view is View.PERSPECTIVE_POST or params.view is View.PERSPECTIVE_THRESHOLD_POST:
         view = threshold_color(sobelx=sobelx, saturation=saturation) \
-            if params.step is Step.PERSPECTIVE_THRESHOLD_POST else undistort
+            if params.view is View.PERSPECTIVE_THRESHOLD_POST else undistort
         view = cv2.warpPerspective(view, transform.matrix, warp_size, flags=cv2.INTER_LINEAR)
         cv2.polylines(view, [np.array(transform.dests, np.int32)], isClosed=True, color=(255, 0, 0), thickness=3)
         return view
 
-    if params.step is Step.HISTOGRAM_PLOT:
+    if params.view is View.HISTOGRAM_PLOT:
         # histogram to image. thanks, https://stackoverflow.com/a/7821917
         # TODO: it'd be cool to overlay the perspective image with this
         fig = plt.figure()
@@ -259,7 +265,7 @@ def run_image(original: np.ndarray, params: Params) -> np.ndarray:
         view = view.reshape(fig.canvas.get_width_height()[::-1] + (3,))
         return view
 
-    if params.step is Step.HISTOGRAM_WINDOWS:
+    if params.view is View.HISTOGRAM_WINDOWS:
         # red/blue lane pixels
         view = np.dstack((warped, warped, warped)) * 255
         view[sw.lnonzeros] = (255, 0, 0)
@@ -290,7 +296,7 @@ def run_image(original: np.ndarray, params: Params) -> np.ndarray:
         view = view.reshape(fig.canvas.get_width_height()[::-1] + (3,))
         return view
 
-    if params.step is Step.FULL:
+    if params.view is View.FULL:
         view = undistort
         # Red/blue lane lines
         lanes_overlay = np.copy(view)
@@ -329,7 +335,7 @@ def run_image(original: np.ndarray, params: Params) -> np.ndarray:
         for i, t in enumerate(text.splitlines()):
             view = cv2.putText(view, t, (50, 50 + 14 * i), cv2.FONT_HERSHEY_PLAIN, 1, (255, 255, 255))
         return view
-    raise Exception('no such step', params.step)
+    raise Exception('no such view', params.view)
 
 
 def run_video(clip: moviepy.editor.VideoClip, params: Params) -> moviepy.Clip:
@@ -378,12 +384,12 @@ def main() -> None:
 
     # One set of Params for every processing Step we're interested in.
     #
-    # Processing one Step at a time is wasteful - we reprocess all earlier steps every time, when in theory we could
-    # output all steps after running once. This is easier to implement, is reusable with images/video, and we're usually
-    # only worried about 1-2 steps at a time.
-    step_params = [Params(
-        step=step,
-        output_suffix='-' + step.name.lower(),
+    # Processing one View at a time is wasteful - we reprocess all earlier views every time, when in theory we could
+    # output all views after running once. This is easier to implement, is reusable with images/video, and we're usually
+    # only worried about 1-2 views at a time.
+    view_params = [Params(
+        view=view,
+        output_suffix='-' + view.name.lower(),
         calibration=calibrate.load_or_calibrate_default(debug=True),
         sobelx_threshold=(20, 100),
         saturation_threshold=(170, 255),
@@ -393,31 +399,31 @@ def main() -> None:
         sliding_windows_margin=100,
         sliding_windows_minpix=50,
         # subclip=(3, 6),
-    ) for step in
-        # list(Step)
+    ) for view in
+        # list(View)
         [
-            Step.ORIGINAL,
-            Step.UNDISTORT,
-            Step.THRESHOLD_RAW,
-            Step.THRESHOLD_COLOR,
-            Step.PERSPECTIVE_PRE,
-            Step.PERSPECTIVE_POST,
-            Step.PERSPECTIVE_THRESHOLD_PRE,
-            Step.PERSPECTIVE_THRESHOLD_POST,
-            Step.HISTOGRAM_PLOT,
-            Step.HISTOGRAM_WINDOWS,
-            Step.FULL,
+            View.ORIGINAL,
+            View.UNDISTORT,
+            View.THRESHOLD_RAW,
+            View.THRESHOLD_COLOR,
+            View.PERSPECTIVE_PRE,
+            View.PERSPECTIVE_POST,
+            View.PERSPECTIVE_THRESHOLD_PRE,
+            View.PERSPECTIVE_THRESHOLD_POST,
+            View.HISTOGRAM_PLOT,
+            View.HISTOGRAM_WINDOWS,
+            View.FULL,
         ]
     ]
 
     # clean up old output
     for ext in ['jpg', 'mp4']:
-        for path in glob.glob(os.path.join(step_params[0].output_dir, "*." + ext)):
+        for path in glob.glob(os.path.join(view_params[0].output_dir, "*." + ext)):
             os.remove(path)
 
     # finally, run each file
     for arg in args:
-        for params in step_params:
+        for params in view_params:
             run_path(arg, params)
 
 

@@ -21,7 +21,7 @@ import glob
 #   * vehicle position: lane midpoint. https://knowledge.udacity.com/questions/30469
 # x Warp the detected lane boundaries back onto the original image.
 # x Output visual display of the lane boundaries
-#   * ...and numerical estimation of lane curvature and vehicle position.
+#   x ...and numerical estimation of lane curvature and vehicle position.
 
 # Color/gradient threshold. Based on section 7-12:
 # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/144d538f-335d-454d-beb2-b1736ec204cb/concepts/a1b70df9-638b-46bb-8af0-12c43dcfd0b4
@@ -63,6 +63,8 @@ class Params:
     num_sliding_windows: int
     sliding_windows_margin: int
     sliding_windows_minpix: int
+    xm_per_pix: float
+    ym_per_pix: float
 
     view: View = View.FULL
     output_dir: str = './output_images'
@@ -198,6 +200,20 @@ def sliding_window_pts(line_xs: typing.List[int], img_y: int, params: Params) ->
     return [[np.array(_sliding_window_pts(line_x, img_y, i, params), np.int32)] for i, line_x in enumerate(line_xs)]
 
 
+def lane_radius_meters(ploty: np.array, polys: typing.Tuple[np.array, np.array], ym_per_pix: float) -> float:
+    """Calculate radius of the lane, given polynomial curves for both lane lines."""
+    # Equations based on section 8-7:
+    # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/626f183c-593e-41d7-a828-eda3c6122573/concepts/1a352727-390e-469d-87ea-c91cd78869d6
+    # Numbers checked against highway curvature specs, and they seem reasonable:
+    # http://onlinemanuals.txdot.gov/txdotmanuals/rdw/horizontal_alignment.htm
+    y_eval = np.max(ploty)
+    curverads = [
+        ((1 + (2 * poly[0] * y_eval * ym_per_pix + poly[1]) ** 2) ** 1.5) / np.absolute(2 * poly[0])
+        for poly in polys]
+    print(polys[0], y_eval, ym_per_pix, curverads[0])
+    return sum(curverads) / len(curverads)
+
+
 def run_image(original: np.ndarray, params: Params) -> np.ndarray:
     # This is a big function with two main sections: calculations and views.
     # Calculations prepare data for display; views render it.
@@ -235,7 +251,7 @@ def run_image(original: np.ndarray, params: Params) -> np.ndarray:
     xcenter0 = int((left_fitx[0] + right_fitx[0]) / 2)
     # offset = xcenter0 - img.shape[1] // 2
     offset = 0
-    radius = 0
+    radius = lane_radius_meters(ploty=ploty, polys=sw.polys, ym_per_pix=params.ym_per_pix)
 
     ### Views ###
     if params.view is View.ORIGINAL: return original
@@ -326,7 +342,7 @@ def run_image(original: np.ndarray, params: Params) -> np.ndarray:
         int(view.shape[1] // 2) - 2:int(view.shape[1] // 2) + 2] = (0, 255, 0)
 
         text = f"""\
-        radius of curvature: {radius}m
+        radius of curvature: {radius: .2f}m
         vehicle offset: {abs(offset): .2f}m {
         "(centered)" if offset == 0 else
         "right" if offset < 0 else
@@ -398,20 +414,24 @@ def main() -> None:
         num_sliding_windows=9,
         sliding_windows_margin=100,
         sliding_windows_minpix=50,
+        # meters per pixel, from section 8-7:
+        # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/626f183c-593e-41d7-a828-eda3c6122573/concepts/1a352727-390e-469d-87ea-c91cd78869d6
+        ym_per_pix=30 / 720,
+        xm_per_pix=3.7 / 700,
         # subclip=(3, 6),
     ) for view in
         # list(View)
         [
-            View.ORIGINAL,
-            View.UNDISTORT,
-            View.THRESHOLD_RAW,
-            View.THRESHOLD_COLOR,
-            View.PERSPECTIVE_PRE,
-            View.PERSPECTIVE_POST,
-            View.PERSPECTIVE_THRESHOLD_PRE,
-            View.PERSPECTIVE_THRESHOLD_POST,
-            View.HISTOGRAM_PLOT,
-            View.HISTOGRAM_WINDOWS,
+            # View.ORIGINAL,
+            # View.UNDISTORT,
+            # View.THRESHOLD_RAW,
+            # View.THRESHOLD_COLOR,
+            # View.PERSPECTIVE_PRE,
+            # View.PERSPECTIVE_POST,
+            # View.PERSPECTIVE_THRESHOLD_PRE,
+            # View.PERSPECTIVE_THRESHOLD_POST,
+            # View.HISTOGRAM_PLOT,
+            # View.HISTOGRAM_WINDOWS,
             View.FULL,
         ]
     ]

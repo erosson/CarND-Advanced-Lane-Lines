@@ -289,13 +289,36 @@ def run_image(img: np.ndarray, params: Params) -> np.ndarray:
     # There's probably a fancier loop-free way to do this, but hell if I can figure it out
     center_overlay = np.copy(img)
     center_overlay.fill(0)
+    position_overlay = np.copy(img)
+    position_overlay.fill(0)
     for y in ploty:
         y = int(y)
         center_overlay[y, int(left_fitx[y]):int(right_fitx[y])] = (0, 255, 0)
+        xcenter = int((left_fitx[y] + right_fitx[y]) / 2)
+        if int((y / 10) % 2) == 0:
+            position_overlay[y, xcenter - 2:xcenter + 2] = (0, 255, 0)
     # Combine the overlays with the original
-    overlay = cv2.addWeighted(center_overlay, 0.2, lanes_overlay, 1, 0)
+    overlay = lanes_overlay
+    overlay = cv2.addWeighted(center_overlay, 0.2, overlay, 1, 0)
+    overlay = cv2.addWeighted(position_overlay, 0.7, overlay, 1, 0)
     overlay = cv2.warpPerspective(overlay, transform.inverse_matrix, warp_size, flags=cv2.INTER_LINEAR)
     img = cv2.addWeighted(overlay, 1, img, 1, 0)
+    # green dot in center-bottom of lane
+    img[img.shape[0] - 6:img.shape[0] - 1, int(img.shape[1] // 2) - 2:int(img.shape[1] // 2) + 2] = (0, 255, 0)
+
+    xcenter0 = int((left_fitx[0] + right_fitx[0]) / 2)
+    # offset = xcenter0 - img.shape[1] // 2
+    offset = 0
+    radius = 0
+    text = f"""\
+radius of curvature: {radius}m
+vehicle offset: {abs(offset): .2f}m {
+    "(centered)" if offset == 0 else
+    "right" if offset < 0 else
+    "left"
+    }"""
+    for i, t in enumerate(text.splitlines()):
+        img = cv2.putText(img, t, (50, 50 + 14 * i), cv2.FONT_HERSHEY_PLAIN, 1, (255, 255, 255))
     if params.step is Step.FULL:
         return img
     raise Exception('no such step', params.step)

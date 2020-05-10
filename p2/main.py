@@ -121,14 +121,74 @@ def threshold_color(sobelx: np.ndarray, saturation: np.ndarray) -> np.ndarray:
     return np.dstack((np.zeros_like(sobelx), sobelx, saturation)) * 255
 
 
-def sliding_window_pts(line_x: int, img_y: int, window_num: int, params: Params) -> typing.List[Pt]:
+@dataclass
+class SlidingWindows:
+    histogram: typing.List[int]
+    lefts: typing.List[int]
+    rights: typing.List[int]
+    lnonzeros: typing.Tuple[np.ndarray, np.ndarray]
+    rnonzeros: typing.Tuple[np.ndarray, np.ndarray]
+
+
+def sliding_windows(warped: np.ndarray, params: Params) -> SlidingWindows:
+    # TODO parameterize
+    minpix = 50
+    # first lane line detection by histogram of the bottom half of the screen: section 8-3
+    # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/626f183c-593e-41d7-a828-eda3c6122573/concepts/011b8b18-331f-4f43-8a04-bf55787b347f
+    histogram = np.sum(warped[warped.shape[0] // 2:, :], axis=0)
+    midpoint = len(histogram) // 2
+    left = max(enumerate(histogram[:midpoint]), key=lambda v: v[1])[0]
+    right = max(enumerate(histogram[midpoint:]), key=lambda v: v[1])[0] + midpoint
+
+    # iterate for all windows after the first: section 8-4
+    # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/626f183c-593e-41d7-a828-eda3c6122573/concepts/4dd9f2c2-1722-412f-9a02-eec3de0c2207
+    lefts = []
+    rights = []
+    lnonzeros = []
+    rnonzeros = []
+    nonzero_y, nonzero_x = [np.array(n) for n in warped.nonzero()]
+    for window_num in range(params.num_sliding_windows):
+        lefts.append(left)
+        rights.append(right)
+        left_pts = _sliding_window_pts(left, warped.shape[0], window_num, params)
+        right_pts = _sliding_window_pts(right, warped.shape[0], window_num, params)
+        left_xs = [x for x, y in left_pts]
+        right_xs = [x for x, y in right_pts]
+        ys = [y for x, y in left_pts]
+        ymin, ymax = min(ys), max(ys)
+        lxmin, lxmax = min(left_xs), max(left_xs)
+        rxmin, rxmax = min(right_xs), max(right_xs)
+        lnonzero = ((nonzero_y >= ymin) & (nonzero_y < ymax) & (nonzero_x >= lxmin) & (nonzero_x < lxmax)).nonzero()[0]
+        rnonzero = ((nonzero_y >= ymin) & (nonzero_y < ymax) & (nonzero_x >= rxmin) & (nonzero_x < rxmax)).nonzero()[0]
+
+        lnonzeros.append(lnonzero)
+        rnonzeros.append(rnonzero)
+
+        if len(lnonzero) > minpix:
+            left = np.int(np.mean(nonzero_x[lnonzero]))
+        if len(rnonzero) > minpix:
+            right = np.int(np.mean(nonzero_x[rnonzero]))
+    lnonzeros = np.concatenate(lnonzeros)
+    rnonzeros = np.concatenate(rnonzeros)
+    return SlidingWindows(
+        histogram=histogram, lefts=lefts, rights=rights,
+        lnonzeros=(nonzero_y[lnonzeros], nonzero_x[lnonzeros]),
+        rnonzeros=(nonzero_y[rnonzeros], nonzero_x[rnonzeros]),
+    )
+
+
+def _sliding_window_pts(line_x: int, img_y: int, window_num: int, params: Params) -> typing.Tuple[Pt, Pt, Pt, Pt]:
     window_height = img_y // params.num_sliding_windows
-    return [
-        (line_x - params.sliding_windows_margin, img_y - window_num * window_height),
-        (line_x + params.sliding_windows_margin, img_y - window_num * window_height),
-        (line_x + params.sliding_windows_margin, img_y - (1 + window_num) * window_height),
-        (line_x - params.sliding_windows_margin, img_y - (1 + window_num) * window_height),
-    ]
+    return (
+        (line_x - params.sliding_windows_margin, img_y - (window_num) * window_height),
+        (line_x + params.sliding_windows_margin, img_y - (window_num) * window_height),
+        (line_x + params.sliding_windows_margin, img_y - (window_num + 1) * window_height),
+        (line_x - params.sliding_windows_margin, img_y - (window_num + 1) * window_height),
+    )
+
+
+def sliding_window_pts(line_xs: typing.List[int], img_y: int, params: Params) -> typing.List[typing.List[np.array]]:
+    return [[np.array(_sliding_window_pts(line_x, img_y, i, params), np.int32)] for i, line_x in enumerate(line_xs)]
 
 
 def run_image(img: np.ndarray, params: Params) -> np.ndarray:
@@ -162,33 +222,30 @@ def run_image(img: np.ndarray, params: Params) -> np.ndarray:
         cv2.polylines(img, [np.array(transform.dests, np.int32)], isClosed=True, color=(255, 0, 0), thickness=3)
         return img
 
-    # lane line detection by histogram of the bottom half of the screen: section 8-3
-    # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/626f183c-593e-41d7-a828-eda3c6122573/concepts/011b8b18-331f-4f43-8a04-bf55787b347f
-    histogram = np.sum(warped[warped.shape[0] // 2:, :], axis=0)
-    midpoint = len(histogram) // 2
-    leftline = max(enumerate(histogram[:midpoint]), key=lambda v: v[1])[0]
-    rightline = max(enumerate(histogram[midpoint:]), key=lambda v: v[1])[0] + midpoint
-    # print(len(histogram), leftline, rightline)
+    sw = sliding_windows(warped, params)
     if params.step is Step.HISTOGRAM_PLOT:
         # histogram to image. thanks, https://stackoverflow.com/a/7821917
         # TODO: it'd be cool to overlay the perspective image with this
         fig = plt.figure()
-        plt.plot(histogram, figure=fig)
+        plt.plot(sw.histogram, figure=fig)
         fig.canvas.draw()
         img = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
         img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
         return img
     if params.step is Step.HISTOGRAM_WINDOWS:
-        img = threshold_color(sobelx=sobelx, saturation=saturation)
-        img = cv2.warpPerspective(img, transform.matrix, warp_size, flags=cv2.INTER_LINEAR)
-        overlay = np.copy(img)
-        leftpts = [np.array(sliding_window_pts(leftline, img.shape[0], 0, params), np.int32)]
-        rightpts = [np.array(sliding_window_pts(rightline, img.shape[0], 0, params), np.int32)]
-        cv2.fillPoly(overlay, leftpts, color=(255, 255, 0))
-        cv2.fillPoly(overlay, rightpts, color=(255, 255, 0))
-        img = cv2.addWeighted(overlay, 0.3, img, 0.7, 0)
-        cv2.polylines(img, leftpts, isClosed=True, color=(255, 255, 0, 255), thickness=1)
-        cv2.polylines(img, rightpts, isClosed=True, color=(255, 255, 0, 255), thickness=1)
+        # img = threshold_color(sobelx=sobelx, saturation=saturation)
+        # img = cv2.warpPerspective(img, transform.matrix, warp_size, flags=cv2.INTER_LINEAR)
+        img = np.dstack((warped, warped, warped)) * 255
+        img[sw.lnonzeros] = (255, 0, 0)
+        img[sw.rnonzeros] = (0, 0, 255)
+        leftpts = sliding_window_pts(sw.lefts, img.shape[0], params)
+        rightpts = sliding_window_pts(sw.rights, img.shape[0], params)
+        for pts in leftpts + rightpts:
+            # overlay = np.copy(img)
+            # cv2.fillPoly(overlay, leftpts, color=(255, 255, 0))
+            # cv2.fillPoly(overlay, rightpts, color=(255, 255, 0))
+            # img = cv2.addWeighted(overlay, 0.3, img, 0.7, 0)
+            cv2.polylines(img, pts, isClosed=True, color=(0, 255, 0, 0), thickness=3)
         return img
     if params.step is Step.FULL:
         return img

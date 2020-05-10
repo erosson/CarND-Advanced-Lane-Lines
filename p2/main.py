@@ -58,10 +58,12 @@ class Params:
     perspective_dest_pct: float
     num_sliding_windows: int
     sliding_windows_margin: int
+    sliding_windows_minpix: int
 
     step: Step = Step.FULL
     output_dir: str = './output_images'
     output_suffix: str = ''
+    subclip: typing.Optional[typing.Tuple[int, int]] = None
 
 
 def apply_threshold(data: np.ndarray, thresh: Threshold) -> np.ndarray:
@@ -132,8 +134,6 @@ class SlidingWindows:
 
 
 def sliding_windows(warped: np.ndarray, params: Params) -> SlidingWindows:
-    # TODO parameterize
-    minpix = 50
     # first lane line detection by histogram of the bottom half of the screen: section 8-3
     # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/626f183c-593e-41d7-a828-eda3c6122573/concepts/011b8b18-331f-4f43-8a04-bf55787b347f
     histogram = np.sum(warped[warped.shape[0] // 2:, :], axis=0)
@@ -165,9 +165,9 @@ def sliding_windows(warped: np.ndarray, params: Params) -> SlidingWindows:
         lnonzeros.append(lnonzero)
         rnonzeros.append(rnonzero)
 
-        if len(lnonzero) > minpix:
+        if len(lnonzero) > params.sliding_windows_minpix:
             left = np.int(np.mean(nonzero_x[lnonzero]))
-        if len(rnonzero) > minpix:
+        if len(rnonzero) > params.sliding_windows_minpix:
             right = np.int(np.mean(nonzero_x[rnonzero]))
     lnonzeros = np.concatenate(lnonzeros)
     rnonzeros = np.concatenate(rnonzeros)
@@ -294,7 +294,8 @@ def run_path(in_path: str, params: Params) -> None:
         mpimg.imsave(out_path, out_img)
     elif in_path.endswith('.mp4'):
         in_clip = moviepy.editor.VideoFileClip(in_path)
-        # in_clip = moviepy.editor.VideoFileClip(in_path).subclip(3, 6)
+        if params.subclip:
+            in_clip = in_clip.subclip(*params.subclip)
         out_clip = run_video(in_clip, params=params)
         # out_clip.write_videofile(out_path, audio=False, logger=None)
         out_clip.write_videofile(out_path, audio=False)
@@ -338,6 +339,8 @@ def main() -> None:
         perspective_dest_pct=300 / 1280,
         num_sliding_windows=9,
         sliding_windows_margin=100,
+        sliding_windows_minpix=50,
+        # subclip=(3, 6),
     ) for step in
         # list(Step)
         [

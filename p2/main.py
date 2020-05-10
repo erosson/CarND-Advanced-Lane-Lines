@@ -128,6 +128,7 @@ class SlidingWindows:
     rights: typing.List[int]
     lnonzeros: typing.Tuple[np.ndarray, np.ndarray]
     rnonzeros: typing.Tuple[np.ndarray, np.ndarray]
+    polys: typing.Tuple[np.array, np.array]
 
 
 def sliding_windows(warped: np.ndarray, params: Params) -> SlidingWindows:
@@ -170,11 +171,11 @@ def sliding_windows(warped: np.ndarray, params: Params) -> SlidingWindows:
             right = np.int(np.mean(nonzero_x[rnonzero]))
     lnonzeros = np.concatenate(lnonzeros)
     rnonzeros = np.concatenate(rnonzeros)
-    return SlidingWindows(
-        histogram=histogram, lefts=lefts, rights=rights,
-        lnonzeros=(nonzero_y[lnonzeros], nonzero_x[lnonzeros]),
-        rnonzeros=(nonzero_y[rnonzeros], nonzero_x[rnonzeros]),
-    )
+    ly, lx = (nonzero_y[lnonzeros], nonzero_x[lnonzeros])
+    ry, rx = (nonzero_y[rnonzeros], nonzero_x[rnonzeros])
+    polys = (np.polyfit(ly, lx, 2), np.polyfit(ry, rx, 2))
+    return SlidingWindows(histogram=histogram, lefts=lefts, rights=rights, lnonzeros=(ly, lx), rnonzeros=(ry, rx),
+                          polys=polys)
 
 
 def _sliding_window_pts(line_x: int, img_y: int, window_num: int, params: Params) -> typing.Tuple[Pt, Pt, Pt, Pt]:
@@ -233,11 +234,12 @@ def run_image(img: np.ndarray, params: Params) -> np.ndarray:
         img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
         return img
     if params.step is Step.HISTOGRAM_WINDOWS:
-        # img = threshold_color(sobelx=sobelx, saturation=saturation)
-        # img = cv2.warpPerspective(img, transform.matrix, warp_size, flags=cv2.INTER_LINEAR)
+        # red/blue lane pixels
         img = np.dstack((warped, warped, warped)) * 255
         img[sw.lnonzeros] = (255, 0, 0)
         img[sw.rnonzeros] = (0, 0, 255)
+
+        # green window boxes
         leftpts = sliding_window_pts(sw.lefts, img.shape[0], params)
         rightpts = sliding_window_pts(sw.rights, img.shape[0], params)
         for pts in leftpts + rightpts:
@@ -246,6 +248,30 @@ def run_image(img: np.ndarray, params: Params) -> np.ndarray:
             # cv2.fillPoly(overlay, rightpts, color=(255, 255, 0))
             # img = cv2.addWeighted(overlay, 0.3, img, 0.7, 0)
             cv2.polylines(img, pts, isClosed=True, color=(0, 255, 0, 0), thickness=3)
+
+        # yellow polynomial lines
+        ploty = np.linspace(0, warped.shape[0] - 1, warped.shape[0])
+        try:
+            lpoly, rpoly = sw.polys
+            left_fitx = lpoly[0] * ploty ** 2 + lpoly[1] * ploty + lpoly[2]
+            right_fitx = rpoly[0] * ploty ** 2 + rpoly[1] * ploty + rpoly[2]
+        except TypeError:
+            # Avoids an error if `left` and `right_fit` are still none or incorrect
+            # print('The function failed to fit a line!')
+            left_fitx = 1 * ploty ** 2 + 1 * ploty
+            right_fitx = 1 * ploty ** 2 + 1 * ploty
+        # draw over the existing image. Thanks, https://stackoverflow.com/a/34459284 and https://stackoverflow.com/a/9295367
+        fig = plt.figure()
+        ax = plt.Axes(fig, [0, 0, 1, 1])
+        ax.set_axis_off()
+        fig.add_axes(ax)
+        plt.set_cmap('hot')
+        ax.imshow(img)
+        plt.plot(left_fitx, ploty, figure=fig, color='yellow')
+        plt.plot(right_fitx, ploty, figure=fig, color='yellow')
+        fig.canvas.draw()
+        img = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
         return img
     if params.step is Step.FULL:
         return img

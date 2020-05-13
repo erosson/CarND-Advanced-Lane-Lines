@@ -42,16 +42,17 @@ I use this to `cv2.undistort()` the calibration images, to verify calibration wo
 Camera calibration data is also stored to a `calibration.pickle` file:
 this allows skipping camera calibration for faster program startup after its first run.
 
-<div>
-    <figure style="display: inline-block; width: 50%">
+<table><tr><td>
+    <figure>
         <img src="./writeup/calibration1.jpg">
         <figcaption>An unmodified image, with obvious distortion</figcaption>
     </figure>
-    <figure style="display: inline-block; width: 50%">
+</td><td>
+    <figure>
         <img src="./writeup/calibration1_unwarp.jpg">
         <figcaption>The same image, with distortion removed. Camera calibration makes a visible difference!</figcaption>
     </figure>
-</div>
+</td></tr></table>
 
 ---
 

@@ -43,17 +43,12 @@ def calibrate(in_paths: typing.List[str], nx: int, ny: int, debug_out: typing.Op
             ret, corners, _ = cals[i]
             if corners is not None:
                 cc_img = cv2.drawChessboardCorners(img, (nx, ny), corners, ret)
-                unwarp_img = undistort(cc_img, calibration)
-
-                print(in_path, "(drawcc)->", [cc_path, unwarp_path])
-                cv2.imwrite(cc_path, cc_img)
-                cv2.imwrite(unwarp_path, unwarp_img)
             else:
                 cc_img = img
-                unwarp_img = undistort(cc_img, calibration)
-                print(in_path, "->", [cc_path, unwarp_path])
-                cv2.imwrite(cc_path, cc_img)
-                cv2.imwrite(unwarp_path, unwarp_img)
+            unwarp_img = undistort(cc_img, calibration)
+            print(in_path, "->", [cc_path, unwarp_path])
+            cv2.imwrite(cc_path, cc_img)
+            cv2.imwrite(unwarp_path, unwarp_img)
     return calibration
 
 

@@ -8,7 +8,7 @@ import numpy as np  # type:ignore
 Calibration = typing.NewType('Calibration', typing.Tuple[object, object, object, object, object])
 
 
-def _calibrate(in_path: str, nx: int, ny: int) -> typing.Tuple[bool, np.array, object]:
+def _find_chessboard_corners(in_path: str, nx: int, ny: int) -> typing.Tuple[bool, np.array, object]:
     # Borrowed lots of code here from udacity section 6-11, "calibrating your camera":
     # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/78afdfc4-f0fa-4505-b890-5d8e6319e15c/concepts/a30f45cb-c1c0-482c-8e78-a26604841ec0
     img = cv2.imread(in_path)
@@ -18,13 +18,13 @@ def _calibrate(in_path: str, nx: int, ny: int) -> typing.Tuple[bool, np.array, o
 
 
 def calibrate(in_paths: typing.List[str], nx: int, ny: int, debug_out: typing.Optional[str] = None) -> Calibration:
-    cals: typing.List[typing.Tuple[bool, np.array, object]] = [_calibrate(in_path, nx, ny) for in_path in in_paths]
+    cals = [_find_chessboard_corners(in_path, nx, ny) for in_path in in_paths]
     imgpoints = [c for (ret, c, shape) in cals if ret]
 
-    # Udacity's code... how on earth do you read this numpy stuff?
+    # Udacity's original code:
     # objp = np.zeros((ny * nx, 3), np.float32)
     # objp[:,:2] = np.mgrid[0:nx, 0:ny].T.reshape(-1,2)
-    # This is equivalent and easier to read
+    # Below is equivalent and easier for me to read:
     objp = np.array([(x, y, 0) for x in range(0, nx) for y in range(0, ny)], np.float32)
     objpoints = [objp for _ in imgpoints]
 

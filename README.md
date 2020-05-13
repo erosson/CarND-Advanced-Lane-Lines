@@ -82,42 +82,31 @@ This creates a thresholded binary image useful for later calculations.
 
 #### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
 
-# TODO
+[My `perspective_transform()` function](https://github.com/erosson/CarND-Advanced-Lane-Lines/blob/master/p2/model.py#L55-L86) calculates the perspective transform points and matrices.
+Source and destination points for this transform are constructed using a combination of the image size, and several image size percentages passed as parameters.
+These percentage parameters allowed me to more easily experiment with slightly different perspective points.
+The default parameters I settled on, plus [the `perspective_transform()` code](https://github.com/erosson/CarND-Advanced-Lane-Lines/blob/master/p2/model.py#L55-L86), results in the following source an destination points:
 
-The code for my perspective transform includes a function called `warper()`, which appears in lines 1 through 8 in the file `example.py` (output_images/examples/example.py) (or, for example, in the 3rd code cell of the IPython notebook).  The `warper()` function takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  I chose the hardcode the source and destination points in the following manner:
-
-```python
-src = np.float32(
-    [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
-    [((img_size[0] / 6) - 10), img_size[1]],
-    [(img_size[0] * 5 / 6) + 60, img_size[1]],
-    [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
-dst = np.float32(
-    [[(img_size[0] / 4), 0],
-    [(img_size[0] / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), 0]])
-```
-
-This resulted in the following source and destination points:
 
 | Source        | Destination   | 
 |:-------------:|:-------------:| 
-| 585, 460      | 320, 0        | 
-| 203, 720      | 320, 720      |
-| 1127, 720     | 960, 720      |
-| 695, 460      | 960, 0        |
+| 200, 719      | 300, 719
+| 1120, 719     | 980, 719
+| 680, 445      | 980, 0
+| 600, 445      | 300, 0
 
-I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
+The following perspective-warped images verify that this perspective transform is reasonably accurate:
 
 ![](./writeup/test4-06-perspective_threshold_pre.jpg)
-**
+*The original, non-perspective-warped image.*
 
 ![](./writeup/test4-08-perspective_threshold_post.jpg)
-**
+*The perspective-warped, birds-eye-view image. The lines here roughly match what we'd expect from the original.*
 
 
 #### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
+
+# TODO
 
 Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
 

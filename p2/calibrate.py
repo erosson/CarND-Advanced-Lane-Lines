@@ -13,7 +13,7 @@ def _calibrate(in_path: str, nx: int, ny: int) -> typing.Tuple[bool, np.array, o
     # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/78afdfc4-f0fa-4505-b890-5d8e6319e15c/concepts/a30f45cb-c1c0-482c-8e78-a26604841ec0
     img = cv2.imread(in_path)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    ret, corners = cv2.findChessboardCorners(gray, (nx, ny), None)
+    ret, corners = cv2.findChessboardCorners(gray, (ny, nx), None)
     return ret, corners, gray.shape
 
 
@@ -32,18 +32,25 @@ def calibrate(in_paths: typing.List[str], nx: int, ny: int, debug_out: typing.Op
     calibration = Calibration(cv2.calibrateCamera(objpoints, imgpoints, shape, None, None))
 
     if debug_out:
-        shutil.rmtree(debug_out)
+        shutil.rmtree(debug_out, ignore_errors=True)
         os.makedirs(debug_out)
         for i, in_path in enumerate(in_paths):
             img = cv2.imread(in_path)
-            ret, corners, _ = cals[i]
-            if ret:
-                cc_img = cv2.drawChessboardCorners(img, (nx, ny), corners, ret)
-                unwarp_img = undistort(img, calibration)
+            basename, ext = os.path.splitext(os.path.basename(in_path))
+            cc_path = os.path.join(debug_out, basename + ext)
+            unwarp_path = os.path.join(debug_out, basename + '_unwarp' + ext)
 
-                basename, ext = os.path.splitext(os.path.basename(in_path))
-                cc_path = os.path.join(debug_out, basename + ext)
-                unwarp_path = os.path.join(debug_out, basename + '_unwarp' + ext)
+            ret, corners, _ = cals[i]
+            if corners is not None:
+                cc_img = cv2.drawChessboardCorners(img, (nx, ny), corners, ret)
+                unwarp_img = undistort(cc_img, calibration)
+
+                print(in_path, "(drawcc)->", [cc_path, unwarp_path])
+                cv2.imwrite(cc_path, cc_img)
+                cv2.imwrite(unwarp_path, unwarp_img)
+            else:
+                cc_img = img
+                unwarp_img = undistort(cc_img, calibration)
                 print(in_path, "->", [cc_path, unwarp_path])
                 cv2.imwrite(cc_path, cc_img)
                 cv2.imwrite(unwarp_path, unwarp_img)
@@ -54,6 +61,7 @@ def load_or_calibrate(*args, **kwargs) -> Calibration:
     """Store/load calibration data as a pickle file for faster reruns."""
     load_path = kwargs.pop('load_path')
     try:
+        # raise FileNotFoundError()  # uncomment to force recalibration
         with open(load_path, 'rb') as f:
             return pickle.load(f)
     except FileNotFoundError:

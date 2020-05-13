@@ -125,8 +125,8 @@ def default_views() -> typing.List[View]:
         # View.PERSPECTIVE_THRESHOLD_PRE,
         # View.PERSPECTIVE_THRESHOLD_POST,
         # View.HISTOGRAM_PLOT,
-        View.HISTOGRAM_WINDOWS,
-        # View.FULL,
+        # View.HISTOGRAM_WINDOWS,
+        View.FULL,
     ]
 
 

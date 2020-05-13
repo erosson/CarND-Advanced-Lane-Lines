@@ -1,4 +1,6 @@
-**Advanced Lane Finding Project - Evan Rosson**
+# Advanced Lane Finding - Evan Rosson
+
+[![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
 
 The goals / steps of this project are the following:
 
@@ -40,14 +42,16 @@ I use this to `cv2.undistort()` the calibration images, to verify calibration wo
 Camera calibration data is also stored to a `calibration.pickle` file:
 this allows skipping camera calibration for faster program startup after its first run.
 
-<figure>
-    <img src="./writeup/calibration1.jpg">
-    <figcaption>An unmodified image, with obvious distortion</figcaption>
-</figure>
-<figure>
-    <img src="./writeup/calibration1_unwrap.jpg">
-    <figcaption>The same image, with distortion removed. Camera calibration makes a visible difference!</figcaption>
-</figure>
+<div>
+    <figure style="display: inline-block; width: 50%">
+        <img src="./writeup/calibration1.jpg">
+        <figcaption>An unmodified image, with obvious distortion</figcaption>
+    </figure>
+    <figure style="display: inline-block; width: 50%">
+        <img src="./writeup/calibration1_unwarp.jpg">
+        <figcaption>The same image, with distortion removed. Camera calibration makes a visible difference!</figcaption>
+    </figure>
+</div>
 
 ---
 

@@ -203,7 +203,7 @@ def lane_offset_width_meters(shape: typing.Sequence[int],
 
 @dataclass
 class Model:
-    """All ."""
+    """All calculations derived from the original image + parameters."""
     params: Params
     original: np.ndarray
     undistort: np.ndarray

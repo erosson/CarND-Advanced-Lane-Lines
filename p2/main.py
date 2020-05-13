@@ -98,17 +98,17 @@ def default_params() -> Params:
     return Params(
         calibration=calibrate.load_or_calibrate_default(debug=True),
         sobelx_threshold=(20, 100),
-        saturation_threshold=(60, 255),
+        saturation_threshold=(130, 255),
         perspective_src_pcts=(445 / 720, (200 / 1280, 600 / 1280, 680 / 1280, 1120 / 1280)),
         perspective_dest_pct=300 / 1280,
         num_sliding_windows=9,
-        sliding_windows_margin=200,
+        sliding_windows_margin=100,
         sliding_windows_minpix=50,
         # meters per pixel, from section 8-7:
         # https://classroom.udacity.com/nanodegrees/nd013/parts/168c60f1-cc92-450a-a91b-e427c326e6a7/modules/5d1efbaa-27d0-4ad5-a67a-48729ccebd9c/lessons/626f183c-593e-41d7-a828-eda3c6122573/concepts/1a352727-390e-469d-87ea-c91cd78869d6
         ym_per_pix=30 / 720,
         xm_per_pix=3.7 / 700,
-        # subclip=(20, 26),
+        subclip=(38, 47),
         out_path_timestamp=False,
     )
 

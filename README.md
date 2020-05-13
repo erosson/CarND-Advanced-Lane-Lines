@@ -42,17 +42,11 @@ I use this to `cv2.undistort()` the calibration images, to verify calibration wo
 Camera calibration data is also stored to a `calibration.pickle` file:
 this allows skipping camera calibration for faster program startup after its first run.
 
-<table><tr><td>
-    <figure>
-        <img src="./writeup/calibration1.jpg">
-        <figcaption>An unmodified image, with obvious distortion</figcaption>
-    </figure>
-</td><td>
-    <figure>
-        <img src="./writeup/calibration1_unwarp.jpg">
-        <figcaption>The same image, with distortion removed. Camera calibration makes a visible difference!</figcaption>
-    </figure>
-</td></tr></table>
+![](./writeup/calibration1.jpg)
+*An unmodified image, with obvious distortion.*
+
+![](./writeup/calibration1_unwarp.jpg)
+*The same image, with distortion removed. Camera calibration makes a visible difference!*
 
 ---
 
@@ -71,14 +65,11 @@ Camera calibration data - the output of `calibrate.py` - is passed throughout mo
 The first step of my image pipeline [undistorts the image](https://github.com/erosson/CarND-Advanced-Lane-Lines/blob/master/p2/model.py#L223) using this camera calibration data.
 [My `calibrate.undistort()`](https://github.com/erosson/CarND-Advanced-Lane-Lines/blob/master/p2/calibrate.py#L85) unwraps the Calibration datatype and performs the `cv2.undistort()` call.
 
-<figure>
-    <img src="./writeup/test4-01-original.jpg">
-    <figcaption>An unmodified image. Distortion is most visible at the bottom corners.</figcaption>
-</figure>
-<figure>
-    <img src="./writeup/test4-02-undistort.jpg">
-    <figcaption>The same image, with distortion removed.</figcaption>
-</figure>
+![](./writeup/test4-01-original.jpg)
+*An unmodified image. Distortion is most visible at the bottom corners.*
+
+![](./writeup/test4-02-undistort.jpg)
+*The same image, distortion-corrected.*
 
 #### 2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
 
@@ -86,12 +77,12 @@ After undistorting the original image, I apply [Sobel x-axis gradients and HLS s
 as the [next step in my image pipeline](https://github.com/erosson/CarND-Advanced-Lane-Lines/blob/master/p2/model.py#L225-L230).
 This creates a thresholded binary image useful for later calculations.
 
-<figure>
-    <img src="./writeup/test4-04-threshold_color.jpg">
-    <figcaption>A thresholded binary image, visualized using green as Sobel-X and blue as saturation.</figcaption>
-</figure>
+![](./writeup/test4-04-threshold_color.jpg)
+*A thresholded binary image, visualized using green as Sobel-X and blue as saturation.*
 
 #### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
+
+# TODO
 
 The code for my perspective transform includes a function called `warper()`, which appears in lines 1 through 8 in the file `example.py` (output_images/examples/example.py) (or, for example, in the 3rd code cell of the IPython notebook).  The `warper()` function takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  I chose the hardcode the source and destination points in the following manner:
 

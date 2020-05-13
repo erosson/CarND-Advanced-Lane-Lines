@@ -26,6 +26,7 @@ class Params:
 
     output_dir: str = './output_images'
     subclip: typing.Optional[typing.Tuple[int, int]] = None
+    out_path_timestamp: bool = False
 
 
 # Color/gradient threshold. Based on section 7-12:

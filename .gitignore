@@ -1,3 +1,4 @@
 .*_cache
 .idea
 /output_images
+.ipynb_checkpoints
